@@ -1,111 +1,43 @@
 argo-cd:
   global:
-    # -- Default domain used by all components
-    ## Used for ingresses, certificates, SSO, notifications, etc.
-    domain: argocd.example.com
+    domain: localhost
     networkPolicy:
-      # -- Chart >= 10 defaults to true. Kept false: NetworkPolicy for the argocd
-      # namespace is managed outside this add-on.
       create: false
 
   configs:
     secret:
-      # -- Create the argocd-secret
       createSecret: true
     cm:
-      # required when SSO is enabled
-      url: "https://argocd.example.com"
+      url: "http://localhost:8080"
       exec.enabled: true
-      resource.exclusions: |
-        - apiGroups:
-          - "tekton.dev"
-          kinds:
-          - "PipelineRun"
-          clusters:
-          - "*"
-      oidc.config: |
-        name: Keycloak
-        issuer: https://keycloak.example/auth/realms/shared
-        clientID: argocd-tenant
-        clientSecret: $keycloak-client-argocd-secret:clientSecret
-        requestedScopes:
-          - openid
-          - profile
-          - email
-          - groups
+      # Дозволяємо ArgoCD обробляти ресурси в усіх неймспейсах для локального середовища
+      resource.exclusions: ""
 
-    params:
-      server.insecure: true
-      applicationsetcontroller.namespaces: krci
-      application.namespaces: krci
-    rbac:
-      scopes: "[groups]"
-      policy.csv: |
-        # default global admins
-        g, ArgoCDAdmins, role:admin
-        # Default global developers
-        g, ArgoCDReadOnly, role:readonly
-    ssh:
-      knownHosts: |
-        # -- list of known host in format:
-        # [host]:port key-type key
-        # Example
-        # [ssh.github.com]:443 ssh-rsa qgSdfOuiYhew/+afhQnvjfjhnhnqgSdfOuiYhew/+afhQnvjfjhnhn
+  params:
+    # Вимикаємо обов'язковий TLS на сервері, щоб простіше заходити через HTTP / port-forward
+    server.insecure: true
+    # Дозволяємо керувати додатками у будь-яких неймспейсах
+    applicationsetcontroller.namespaces: "*"
+    application.namespaces: "*"
 
-  # we use Keycloak so no DEX is required
+  rbac:
+    policy.default: role:admin
+
+  # Вимикаємо інтеграції з зовнішнім SSO/Keycloak для локального Kind
   dex:
     enabled: false
+
   redis:
     enabled: true
 
   server:
     replicas: 1
-    env:
-      - name: ARGOCD_API_SERVER_REPLICAS
-        value: '1'
-
-    # -- Enable after nginx-ingress is installed
     ingress:
       enabled: false
-      hostname: "argocd.example.com"
 
-  # Disabled for multitenancy env with single instance deployment
-  # applicationSet:
-  #   allowAnyNamespace: true
-  #   extraEnv:
-  #   - name: ARGOCD_APPLICATIONSET_CONTROLLER_ENABLE_SCM_PROVIDERS
-  #     value: 'false'
-
-# Can be configured after keycloak-operator and external-secrets-operator are installed
+# Вимикаємо OIDC (Keycloak) та External Secrets (AWS), бо їх немає в чистому kind
 oidc:
   enabled: false
 
-# Configure components of the External Secrets Operator (ESO).
-# Can be configured after keycloak-operator and external-secrets-operator are installed
 eso:
-  # -- Install components of the ESO.
   enabled: false
-  # -- Defines provider type. One of `aws`, `generic`, or `vault`.
-  provider: "aws"
-  # -- Defines the path to the secret in the provider. If provider is `vault`, this is the path must be prefixed with `secret/`.
-  secretPath: "/infra/core/addons/argocd"
-  # -- Vault configuration (if provider is `vault`).
-  vault:
-    # -- Vault server URL.
-    server: "http://vault.vault:8200"
-    # -- Mount path for the Kubernetes authentication method.
-    mountPath: "core"
-    # -- Vault role for the Kubernetes authentication method.
-    role: argocd
-  # -- AWS configuration (if provider is `aws`).
-  aws:
-    # -- AWS region.
-    region: "eu-central-1"
-    # -- AWS role ARN for the ExternalSecretOperator to assume.
-    roleArn: "arn:aws:iam::012345678910:role/AWSIRSA_Shared_ExternalSecretOperatorAccess"
-  generic:
-    secretStore:
-      # -- Defines SecretStore provider configuration.
-      providerConfig: {}
-      #  gcpsm:
-      #    projectID: "alphabet-123"
